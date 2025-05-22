@@ -12,14 +12,13 @@
 #define F_SCL 50000L			/* Define SCL clock frequency */
 
 // Pin definitions
-#define HUMIDIFIER_FAN_PIN  D,0  // Humidifier fan pin
 #define HUMIDIFIER_PIN      D,1  // Humidifier pin
 #define INT0_PIN            D,2  // External interrupt 0 pin (system reset)
 #define INT1_PIN            D,3  // External interrupt 1 pin (rotation stop)
 #define ROTATION_PIN        D,4  // Egg rotation motor pin
-#define DHT_PIN             D,5  // DHT22 sensor pin
-#define HEATER_FAN_PIN      D,6  // Heater and fan pin
-#define FAN_PIN             D,7  // Ventilation fan pin
+#define HEATER_FAN_PIN      D,5  // Heater and fan pin
+#define FAN_PIN             D,6  // Ventilation fan pin
+#define DHT_PIN             D,7  // DHT22 sensor pin
 
 // LCD pin definitions
 #define LCD_PORT            PORTA  // LCD data port

@@ -15,7 +15,7 @@
 
 // Custom characters for LCD
 const uint8_t fan[8] PROGMEM        = {0x00, 0x0C, 0x05, 0x1F, 0x14, 0x06, 0x00, 0x00};
-const uint8_t humidifier[8] PROGMEM = {0x00, 0x0A, 0x14, 0x0A, 0x1F, 0x1F, 0x00, 0x00};
+const uint8_t humidifier[8] PROGMEM = {0x04, 0x0E, 0x19, 0x1D, 0x1F, 0x1F, 0x0E, 0x00};
 const uint8_t heater[8] PROGMEM     = {0x00, 0x09, 0x12, 0x12, 0x09, 0x09, 0x12, 0x00};
 const uint8_t rotate[8] PROGMEM     = {0x1E, 0x12, 0x07, 0x0A, 0x1C, 0x09, 0x0F, 0x00};
 
@@ -33,13 +33,11 @@ volatile uint8_t dht_index = 0;
 volatile struct tm* t = NULL;
 volatile uint8_t timer0_counter = 0;
 volatile uint8_t timer2_counter = 0;
-volatile int i,j;
 
 // Control states
 typedef enum { OFF, ON } ControlState;
 ControlState heater_state = OFF;
 ControlState humidifier_state = OFF;
-ControlState humidifier_fan_state = OFF;
 ControlState fan_state = OFF;
 
 // Function prototypes
@@ -48,8 +46,8 @@ void LCD_SetupCustomChars(void);
 void Timer0_Init(void);
 void Timer1_Init(void);
 void Timer2_Init(void);
-// void INT0_Init(void);
-// void INT1_Init(void);
+void INT0_Init(void);
+void INT1_Init(void);
 ControlState HysteresisControl(double current, double setpoint, double hysteresis, ControlState current_state);
 void UpdateDisplay(void);
 void ControlDevices(void);
@@ -90,16 +88,16 @@ void Timer2_Init(void) {
 }
 
 // Initialize INT0 (system reset)
-// void INT0_Init(void) {
-// 	GICR |= (1 << INT0);
-// 	MCUCR |= (1 << ISC01); // Falling edge
-// }
-// 
+void INT0_Init(void) {
+	GICR |= (1 << INT0);
+	MCUCR |= (1 << ISC01); // Falling edge
+}
+ 
 // Initialize INT1 (rotation stop)
-// void INT1_Init(void) {
-// 	GICR |= (1 << INT1);
-// 	MCUCR |= (1 << ISC11); // Falling edge
-// }
+void INT1_Init(void) {
+	GICR |= (1 << INT1);
+	MCUCR |= (1 << ISC11); // Falling edge
+}
 
 // Hysteresis control logic
 ControlState HysteresisControl(double current, double setpoint, double hysteresis, ControlState current_state) {
@@ -129,10 +127,9 @@ void UpdateDisplay(void) {
 	LCD_String_xy(1, 0, buffer);
 
 	LCD_Char_xy(0, 11, rotate_flag ? 3 : ' ');
-	LCD_Char_xy(0, 12, heater_state ? 0 : ' ');
+	LCD_Char_xy(0, 12, fan_state ? 0 : ' ');
 	LCD_Char_xy(0, 13, heater_state ? 2 : ' ');
-	LCD_Char_xy(0, 14, humidifier_fan_state ? 0 : ' ');
-	LCD_Char_xy(0, 15, humidifier_state ? 1 : ' ');
+	LCD_Char_xy(0, 14, humidifier_state ? 1 : ' ');
 	LCD_String_xy(1, 15, (t->day - 1 < SETTER_PERIOD_DAYS) ? "S" : "H");
 }
 
@@ -145,13 +142,12 @@ void ControlDevices(void) {
 	DigitalWrite(HEATER_FAN_PIN, heater_state);
 	humidifier_state = HysteresisControl(avr_hum, hum_setpoint, HUM_HYSTERESIS, humidifier_state);
 	DigitalWrite(HUMIDIFIER_PIN, humidifier_state);
-	humidifier_fan_state = HysteresisControl(avr_hum, hum_setpoint, HUM_HYSTERESIS / 2, humidifier_fan_state);
-	DigitalWrite(HUMIDIFIER_FAN_PIN, humidifier_fan_state);
 	fan_state = (avr_temp > temp_setpoint + FAN_TRIGGER_TEMP || avr_hum > hum_setpoint + FAN_TRIGGER_HUM) ? ON : OFF;
 	DigitalWrite(FAN_PIN, fan_state);
 
 	// check in setter period
-	if (t->day - 1 < SETTER_PERIOD_DAYS && t->hour % ROTATION_INTERVAL_HOURS == 0 && t->minute == 0 && t->second == 0) {
+// 	if (t->day - 1 < SETTER_PERIOD_DAYS && t->hour % ROTATION_INTERVAL_HOURS == 0 && t->minute == 0 && t->second == 0) {
+	if (t->day - 1 < SETTER_PERIOD_DAYS && t->hour == 0 && t->minute % 2 == 0 && t->second == 0) {
 		rotate_flag = true;
 	}
 	DigitalWrite(ROTATION_PIN, rotate_flag);
@@ -159,6 +155,7 @@ void ControlDevices(void) {
 
 // Read DHT22 sensor
 void ReadDHT(void) {
+	cli();
 	enum DHT_Status_t status = DHT_Read(&temp, &hum);
 	if (status == DHT_Ok) {
 		arr_avr_t[dht_index] = temp;
@@ -167,6 +164,7 @@ void ReadDHT(void) {
 		avr_temp = average(arr_avr_t, DHT_AVERAGE_COUNT);
 		avr_hum = average(arr_avr_h, DHT_AVERAGE_COUNT);
 	}
+	sei();
 }
 
 // Timer0 ISR: Trigger display update every ~16ms
@@ -198,11 +196,8 @@ ISR(INT0_vect) {
 
 // INT1 ISR: Reset system with debounce
 ISR(INT1_vect) {
-	if (!first_run_flag) {
-		first_run_flag = true;
-		RTC_Clock_Write(0, 0, 0, hour_24);
-		RTC_Calendar_Write(1, 1, 1, 19);
-	}
+	RTC_Clock_Write(0, 0, 0, hour_24);
+	RTC_Calendar_Write(1, 1, 1, 19);
 }
 
 int main(void) {
@@ -214,14 +209,13 @@ int main(void) {
     Timer0_Init();
     Timer1_Init();
     Timer2_Init();
-//     INT0_Init();
-//     INT1_Init();
+    INT0_Init();
+    INT1_Init();
 
-//     PinMode(ROTATION_PIN, Output);
-//     PinMode(HEATER_FAN_PIN, Output);
-//     PinMode(HUMIDIFIER_PIN, Output);
-//     PinMode(FAN_PIN, Output);
-//     PinMode(HUMIDIFIER_FAN_PIN, Output);
+    PinMode(ROTATION_PIN, Output);
+    PinMode(HEATER_FAN_PIN, Output);
+    PinMode(HUMIDIFIER_PIN, Output);
+    PinMode(FAN_PIN, Output);
 
     sei();
     set_sleep_mode(SLEEP_MODE_IDLE);
@@ -232,10 +226,10 @@ int main(void) {
 		    UpdateDisplay();
 		    update_display_flag = false;
 	    }
-// 	    if (control_flag) {
-// 		    ControlDevices();
-// 		    control_flag = false;
-// 	    }
+	    if (control_flag) {
+		    ControlDevices();
+		    control_flag = false;
+	    }
 	    if (read_dht_flag) {
 		    ReadDHT();
 		    read_dht_flag = false;
