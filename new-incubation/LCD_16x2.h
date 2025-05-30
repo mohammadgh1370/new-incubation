@@ -7,12 +7,6 @@
 #include <util/delay.h>					/* Include Delay header file */
 #include <inttypes.h>
 
-#define LCD_Dir DDRA					/* Define LCD data port direction */
-#define LCD_Port PORTA					/* Define LCD data port */
-#define EN PA2							/* Define Enable signal pin */
-#define RW PA1							/* Define Read/Write signal pin */
-#define RS PA0							/* Define Register Select (data reg./command reg.) signal pin */
-
 #define PROGRESSPIXELS_PER_CHAR	6
  
 void LCD_Reset(void);

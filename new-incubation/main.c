@@ -12,6 +12,7 @@
 #include "I2C_MASTER.h"
 #include "DS1307.h"
 #include "DHT.h"
+#include "ADC.h"
 
 // Custom characters for LCD
 const uint8_t fan[8] PROGMEM        = {0x00, 0x0C, 0x05, 0x1F, 0x14, 0x06, 0x00, 0x00};
@@ -24,21 +25,29 @@ volatile bool first_run_flag = false;
 volatile bool update_display_flag = false;
 volatile bool control_flag = false;
 volatile bool read_dht_flag = false;
-volatile bool rotate_flag = false;
+volatile bool read_adc_flag = false;
 double temp = 0, hum = 0;
+float out_temp;
 double arr_avr_t[DHT_AVERAGE_COUNT] = {0};
 double arr_avr_h[DHT_AVERAGE_COUNT] = {0};
+double arr_avr_out_t[LM35_AVERAGE_COUNT] = {0};
 volatile double avr_temp = 0, avr_hum = 0;
 volatile uint8_t dht_index = 0;
+volatile uint8_t lm35_index = 0;
 volatile struct tm* t = NULL;
 volatile uint8_t timer0_counter = 0;
+volatile uint8_t timer1_counter = 0;
 volatile uint8_t timer2_counter = 0;
+volatile uint8_t int0_counter = 0;
+volatile uint8_t display_state = 0;
+static uint8_t last_second = 0; // Last second to detect change
 
 // Control states
 typedef enum { OFF, ON } ControlState;
 ControlState heater_state = OFF;
 ControlState humidifier_state = OFF;
 ControlState fan_state = OFF;
+ControlState rotate_state = OFF;
 
 // Function prototypes
 void WDT_Init(void);
@@ -52,6 +61,7 @@ ControlState HysteresisControl(double current, double setpoint, double hysteresi
 void UpdateDisplay(void);
 void ControlDevices(void);
 void ReadDHT(void);
+void ReadADC(void);
 
 // Initialize watchdog timer (call once)
 void WDT_Init(void) {
@@ -87,16 +97,18 @@ void Timer2_Init(void) {
 	TIMSK |= (1 << OCIE2); // Enable Timer2 compare match interrupt
 }
 
-// Initialize INT0 (system reset)
+// Initialize INT0 (rotation stop)
 void INT0_Init(void) {
 	GICR |= (1 << INT0);
 	MCUCR |= (1 << ISC01); // Falling edge
+	MCUCR &= ~(1 << ISC00);
 }
  
-// Initialize INT1 (rotation stop)
+// Initialize INT1 (system reset)
 void INT1_Init(void) {
 	GICR |= (1 << INT1);
 	MCUCR |= (1 << ISC11); // Falling edge
+	MCUCR &= ~(1 << ISC10);
 }
 
 // Hysteresis control logic
@@ -115,22 +127,37 @@ void UpdateDisplay(void) {
 	sprintf(buffer, "%02d:%02d:%02d:%02d", t->day - 1, t->hour, t->minute, t->second);
 	LCD_String_xy(0, 0, buffer);
 
-	enum DHT_Status_t status = DHT_GetStatus();
-	if (status == DHT_Ok) {
-		char temp_str[10], hum_str[10];
-		dtostrf(avr_temp, 2, 1, temp_str);
-		dtostrf(avr_hum, 2, 1, hum_str);
-		sprintf(buffer, "T=%sC H=%s%%", temp_str, hum_str);
-	} else {
-		sprintf(buffer, "T=%dErr H=%dErr", status, status);
+	if (t->second != last_second && t->second % SWITCH_DISPLAY_SECOND == 0) {
+		display_state = !display_state; // Toggle display between LM35 and DHT
+		last_second = t->second;
 	}
-	LCD_String_xy(1, 0, buffer);
+	
+	if (display_state){
+		enum DHT_Status_t status = DHT_GetStatus();
+		if (status == DHT_Ok) {
+			char temp_str[10], hum_str[10];
+			dtostrf(avr_temp, 2, 1, temp_str);
+			dtostrf(avr_hum, 2, 1, hum_str);
+			sprintf(buffer, "T=%sC H=%s%%", temp_str, hum_str);
+		} else {
+			sprintf(buffer, "T=%dErr H=%dErr", status, status);
+		}
+	} else {
+		sprintf(buffer,"OUT TEMP=%d%cC  ", (int)out_temp, degree_sysmbol);
+	}
+	LCD_String_xy(1,0,buffer);
 
-	LCD_Char_xy(0, 11, rotate_flag ? 3 : ' ');
+	LCD_Char_xy(0, 11, rotate_state ? 3 : ' ');
 	LCD_Char_xy(0, 12, fan_state ? 0 : ' ');
 	LCD_Char_xy(0, 13, heater_state ? 2 : ' ');
 	LCD_Char_xy(0, 14, humidifier_state ? 1 : ' ');
 	LCD_String_xy(1, 15, (t->day - 1 < SETTER_PERIOD_DAYS) ? "S" : "H");
+	
+	if ((int)t->second%20 == 0)
+	{
+		LCD_Reset();
+		LCD_Init();
+	}
 }
 
 // Control devices based on temperature and humidity
@@ -139,18 +166,32 @@ void ControlDevices(void) {
 	double hum_setpoint = (t->day - 1 < SETTER_PERIOD_DAYS) ? HUM_SETTER : HUM_HATCHER;
 
 	heater_state = HysteresisControl(avr_temp, temp_setpoint, TEMP_HYSTERESIS, heater_state);
-	DigitalWrite(HEATER_FAN_PIN, heater_state);
+	DigitalWrite(HEATER_PIN, heater_state);
+// 	_delay_ms(50);
+	
 	humidifier_state = HysteresisControl(avr_hum, hum_setpoint, HUM_HYSTERESIS, humidifier_state);
 	DigitalWrite(HUMIDIFIER_PIN, humidifier_state);
+// 	_delay_ms(50);
+	
+	if (heater_state || humidifier_state)
+	{
+		DigitalWrite(FAN_PIN, ON);
+// 		_delay_ms(50);
+	}
+		
 	fan_state = (avr_temp > temp_setpoint + FAN_TRIGGER_TEMP || avr_hum > hum_setpoint + FAN_TRIGGER_HUM) ? ON : OFF;
-	DigitalWrite(FAN_PIN, fan_state);
+	DigitalWrite(VENT_FAN_PIN, fan_state);
+// 	_delay_ms(50);
 
 	// check in setter period
-// 	if (t->day - 1 < SETTER_PERIOD_DAYS && t->hour % ROTATION_INTERVAL_HOURS == 0 && t->minute == 0 && t->second == 0) {
-	if (t->day - 1 < SETTER_PERIOD_DAYS && t->hour == 0 && t->minute % 2 == 0 && t->second == 0) {
-		rotate_flag = true;
+	if (t->day - 1 < SETTER_PERIOD_DAYS && t->hour % ROTATION_INTERVAL_HOURS == 0 && t->minute == 0 && t->second == 0) {
+		rotate_state = ON;
 	}
-	DigitalWrite(ROTATION_PIN, rotate_flag);
+	if (rotate_state)
+	{
+	}
+	DigitalWrite(ROTATION_PIN, rotate_state);
+// 	_delay_ms(50);
 }
 
 // Read DHT22 sensor
@@ -167,11 +208,24 @@ void ReadDHT(void) {
 	sei();
 }
 
+// Read LM35 sensor
+void ReadADC(void) {
+	cli();
+	lm35_index = (lm35_index + 1) % LM35_AVERAGE_COUNT;
+	arr_avr_out_t[lm35_index] = ((ADC_Read(0) * 4.88) / 10.00);
+	out_temp = average(arr_avr_out_t, LM35_AVERAGE_COUNT);
+	sei();
+}
+
 // Timer0 ISR: Trigger display update every ~16ms
 ISR(TIMER0_COMP_vect) {
 	if (++timer0_counter >= 31) { // Trigger every 31 interrupts (~500ms)
 		timer0_counter = 0;
 		update_display_flag = true;
+	}
+	if (rotate_state)
+	{
+		int0_counter++;
 	}
 }
 
@@ -179,6 +233,10 @@ ISR(TIMER0_COMP_vect) {
 ISR(TIMER1_COMPA_vect) {
 	wdt_reset();
 	control_flag = true;
+	if (++timer1_counter >= 2) { // Trigger every 2 interrupts (~100ms)
+		timer1_counter = 0;
+		read_adc_flag = true;
+	}
 }
 
 // Timer2 ISR: Trigger DHT reading every ~16ms
@@ -191,7 +249,7 @@ ISR(TIMER2_COMP_vect) {
 
 // INT0 ISR: Stop rotation with debounce
 ISR(INT0_vect) {
-	rotate_flag = false;
+	rotate_state = OFF;
 }
 
 // INT1 ISR: Reset system with debounce
@@ -206,16 +264,18 @@ int main(void) {
     DHT_Setup();
     LCD_SetupCustomChars();
     WDT_Init();
+	ADC_Init();
     Timer0_Init();
     Timer1_Init();
     Timer2_Init();
     INT0_Init();
     INT1_Init();
 
+	PinMode(FAN_PIN, Output);
     PinMode(ROTATION_PIN, Output);
-    PinMode(HEATER_FAN_PIN, Output);
+    PinMode(HEATER_PIN, Output);
     PinMode(HUMIDIFIER_PIN, Output);
-    PinMode(FAN_PIN, Output);
+    PinMode(VENT_FAN_PIN, Output);
 
     sei();
     set_sleep_mode(SLEEP_MODE_IDLE);
@@ -230,6 +290,10 @@ int main(void) {
 		    ControlDevices();
 		    control_flag = false;
 	    }
+		if (read_adc_flag) {
+			ReadADC();
+			read_adc_flag = false;
+		}
 	    if (read_dht_flag) {
 		    ReadDHT();
 		    read_dht_flag = false;

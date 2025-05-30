@@ -5,46 +5,46 @@
 #include <util/delay.h>
 
 void LCD_Reset(void){
-	LCD_Port = 0x00;
+	LCD_PORT = 0x00;
 }
 
 void LCD_Command(unsigned char cmd )
 {
-	LCD_Port = (LCD_Port & 0x0F) | (cmd & 0xF0); /* sending upper nibble */
-	LCD_Port &= ~ (1<<RS);				/* RS=0, command reg. */
-	LCD_Port |= (1<<EN);				/* Enable pulse */
+	LCD_PORT = (LCD_PORT & 0x0F) | (cmd & 0xF0); /* sending upper nibble */
+	LCD_PORT &= ~ (1<<LCD_RS);				/* RS=0, command reg. */
+	LCD_PORT |= (1<<LCD_EN);				/* Enable pulse */
 	_delay_us(1);
-	LCD_Port &= ~ (1<<EN);
+	LCD_PORT &= ~ (1<<LCD_EN);
 
 	_delay_us(200);
 
-	LCD_Port = (LCD_Port & 0x0F) | (cmd << 4);  /* sending lower nibble */
-	LCD_Port |= (1<<EN);
+	LCD_PORT = (LCD_PORT & 0x0F) | (cmd << 4);  /* sending lower nibble */
+	LCD_PORT |= (1<<LCD_EN);
 	_delay_us(1);
-	LCD_Port &= ~ (1<<EN);
+	LCD_PORT &= ~ (1<<LCD_EN);
 	_delay_ms(2);
 }
 
 void LCD_Char(char data)
 {
-	LCD_Port = (LCD_Port & 0x0F) | (data & 0xF0); /* sending upper nibble */
-	LCD_Port |= (1<<RS);				/* RS=1, data reg. */
-	LCD_Port|= (1<<EN);
+	LCD_PORT = (LCD_PORT & 0x0F) | (data & 0xF0); /* sending upper nibble */
+	LCD_PORT |= (1<<LCD_RS);				/* RS=1, data reg. */
+	LCD_PORT|= (1<<LCD_EN);
 	_delay_us(1);
-	LCD_Port &= ~ (1<<EN);
+	LCD_PORT &= ~ (1<<LCD_EN);
 
 	_delay_us(200);
 
-	LCD_Port = (LCD_Port & 0x0F) | (data << 4); /* sending lower nibble */
-	LCD_Port |= (1<<EN);
+	LCD_PORT = (LCD_PORT & 0x0F) | (data << 4); /* sending lower nibble */
+	LCD_PORT |= (1<<LCD_EN);
 	_delay_us(1);
-	LCD_Port &= ~ (1<<EN);
+	LCD_PORT &= ~ (1<<LCD_EN);
 	_delay_ms(2);
 }
 
 void LCD_Init (void)					/* LCD Initialize function */
 {
-	LCD_Dir = 0xFF;						/* Make LCD command port direction as o/p */
+	LCD_DIR = 0xFF;						/* Make LCD command port direction as o/p */
 	_delay_ms(20);						/* LCD Power ON delay always >15ms */
 	
 	LCD_Command(0x33);
