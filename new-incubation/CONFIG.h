@@ -32,8 +32,8 @@
 
 // Default control parameters
 #define SETTER_PERIOD_DAYS  19     // Setter period duration (days)
-#define TEMP_SETTER         37	   // Temperature setpoint for setter period (°C)
-#define TEMP_HATCHER        36.5   // Temperature setpoint for hatcher period (°C)
+#define TEMP_SETTER         36	   // Temperature setpoint for setter period (°C)
+#define TEMP_HATCHER        35.5   // Temperature setpoint for hatcher period (°C)
 #define HUM_SETTER          60.0   // Humidity setpoint for setter period (%)
 #define HUM_HATCHER         70.0   // Humidity setpoint for hatcher period (%)
 #define TEMP_HYSTERESIS     0.2    // Temperature hysteresis (°C)
@@ -59,5 +59,10 @@
 #define ELEMENT_OFF_TIME		270 // Element off
 
 #define BUTTON_HOLD_TIME		3	// second
+
+#define EEPROM_SEC_ADDR			0x00 // Second address
+#define EEPROM_MIN_ADDR			0x01 // Minute address
+#define EEPROM_HOUR_ADDR		0x02 // Hour Address
+#define EEPROM_DAY_ADDR			0x03 // Day address
 
 #endif // CONFIG_H

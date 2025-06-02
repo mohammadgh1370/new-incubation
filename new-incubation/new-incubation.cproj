@@ -126,6 +126,9 @@
     <Compile Include="ADC.h">
       <SubType>compile</SubType>
     </Compile>
+    <Compile Include="EEPROM.c">
+      <SubType>compile</SubType>
+    </Compile>
     <Compile Include="CONFIG.h">
       <SubType>compile</SubType>
     </Compile>
@@ -145,6 +148,9 @@
       <SubType>compile</SubType>
     </Compile>
     <Compile Include="I2C_MASTER.h">
+      <SubType>compile</SubType>
+    </Compile>
+    <Compile Include="EEPROM.h">
       <SubType>compile</SubType>
     </Compile>
     <Compile Include="IO_MACROS.h">
