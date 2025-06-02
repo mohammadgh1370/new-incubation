@@ -1,16 +1,9 @@
-/*
- * IncFile1.h
- *
- * Created: 6/2/2025 11:14:36 AM
- *  Author: Mohammad
- */ 
+#ifndef EEPROM_H
+#define EEPROM_H
 
+#include <stdint.h>
 
-#ifndef INCFILE1_H_
-#define INCFILE1_H_
+void EEPROM_Write_Time(uint8_t sec, uint8_t min, uint8_t hour, uint8_t day);
+void EEPROM_Read_Time(uint8_t* sec, uint8_t* min, uint8_t* hour, uint8_t* day);
 
-
-
-
-
-#endif /* INCFILE1_H_ */
+#endif

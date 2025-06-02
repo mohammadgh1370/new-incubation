@@ -13,6 +13,7 @@
 #include "DS1307.h"
 #include "DHT.h"
 #include "ADC.h"
+#include "EEPROM.h"
 
 // Custom characters for LCD
 const uint8_t fan[8] PROGMEM        = {0x00, 0x0C, 0x05, 0x1F, 0x14, 0x06, 0x00, 0x00};
@@ -42,6 +43,7 @@ volatile uint8_t timer2_counter = 0;
 volatile uint32_t rotation_start_time = 0;
 volatile uint32_t fan_start_time = 0;
 volatile uint32_t last_element_start = 0;
+volatile uint32_t heater_start_time = 0;
 volatile uint8_t display_state = 0;
 volatile uint8_t last_second = 0;
 volatile uint32_t int1_press_start = 0;
@@ -49,6 +51,7 @@ volatile uint32_t int1_press_start = 0;
 // Control states
 typedef enum { OFF, ON } ControlState;
 ControlState heater_state = OFF;
+ControlState prev_heater_state = OFF;
 ControlState element_state = OFF;
 ControlState prev_element_state = OFF;
 ControlState fan_state = OFF;
@@ -171,11 +174,19 @@ void ControlDevices(void) {
 	double hum_setpoint = (t->day - 1 < SETTER_PERIOD_DAYS) ? HUM_SETTER : HUM_HATCHER;
 
 	ControlState new_heater_state = HysteresisControl(avr_temp, temp_setpoint, TEMP_HYSTERESIS, heater_state);
+	if (prev_heater_state != new_heater_state)
+	{
+		heater_start_time = current_time;
+		prev_heater_state = new_heater_state;
+	}
 	if (new_heater_state != heater_state)
 	{
 		heater_state = new_heater_state;
+		if (heater_state && !fan_state && current_time - heater_start_time > 30)
+		{
+			heater_state = OFF;
+		}
 		DigitalWrite(HEATER_PIN, heater_state);
-		_delay_ms(SWITCH_DISPLAY_SECOND);
 		LCD_Reset();
 		LCD_Init();
 	}
@@ -193,14 +204,12 @@ void ControlDevices(void) {
 	{
 		fan_state = new_fan_state;
 		DigitalWrite(FAN_PIN, fan_state);
-		_delay_ms(SWITCH_DISPLAY_SECOND);
 		LCD_Reset();
 		LCD_Init();
 	}
 		
 	vent_fan_state = (avr_temp > temp_setpoint + FAN_TRIGGER_TEMP || avr_hum > hum_setpoint + FAN_TRIGGER_HUM) ? ON : OFF;
 	DigitalWrite(VENT_FAN_PIN, vent_fan_state);
-	_delay_ms(SWITCH_DISPLAY_SECOND);
 
 	// check in setter period
 	if (t->day - 1 < SETTER_PERIOD_DAYS && t->hour % ROTATION_INTERVAL_HOURS == 0 && t->minute == 0 && t->second == 0) {
@@ -210,7 +219,6 @@ void ControlDevices(void) {
 	if (rotate_state != prev_rotate_state) {
 		prev_rotate_state = rotate_state;
 		DigitalWrite(ROTATION_PIN, rotate_state);
-		_delay_ms(SWITCH_DISPLAY_SECOND);
 		LCD_Reset();
 		LCD_Init();
 	}
@@ -305,6 +313,7 @@ ISR(TIMER2_COMP_vect) {
 		timer2_counter = 0;
 		read_dht_flag = true;
 	}
+	
 }
 
 // INT0 ISR: Stop rotation with debounce
@@ -343,6 +352,20 @@ int main(void) {
     PinMode(HEATER_PIN, Output);
     PinMode(ELEMENT_PIN, Output);
     PinMode(VENT_FAN_PIN, Output);
+	
+	t = RTC_Read_TimeDate();
+	if (t->second >= 60 || t->minute >= 60 || t->hour >= 24) {
+		uint8_t sec, min, hour, day;
+		EEPROM_Read_Time(&sec, &min, &hour, &day);
+		if (sec < 60 && min < 60 && hour < 24 && day < 255) {
+			RTC_Clock_Write(sec, min, hour, hour_24);
+			RTC_Calendar_Write(day, 1, 1, 19);
+		} else {
+			RTC_Clock_Write(0, 0, 0, hour_24);
+			RTC_Calendar_Write(1, 1, 1, 19);
+			EEPROM_Write_Time(0, 0, 0, 1);
+		}
+	}
 
     sei();
     set_sleep_mode(SLEEP_MODE_IDLE);
@@ -365,6 +388,9 @@ int main(void) {
 		    ReadDHT();
 		    read_dht_flag = false;
 	    }
+		if (t->second == 0 && t->minute == 0 && t->hour % 2 == 0) {
+			EEPROM_Write_Time(t->second, t->minute, t->hour, t->day);
+		}
 		if (int1_press_start != 0)
 		{
 			uint32_t current_time = t->second + t->minute * 60 + t->hour * 3600;
