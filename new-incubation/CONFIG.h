@@ -58,4 +58,6 @@
 #define ELEMENT_ON_TIME			30  // Element on
 #define ELEMENT_OFF_TIME		270 // Element off
 
+#define BUTTON_HOLD_TIME		3	// second
+
 #endif // CONFIG_H

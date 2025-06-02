@@ -26,6 +26,7 @@ volatile bool update_display_flag = false;
 volatile bool control_flag = false;
 volatile bool read_dht_flag = false;
 volatile bool read_adc_flag = false;
+volatile bool int1_flag = false;
 double temp = 0, hum = 0;
 float out_temp;
 double arr_avr_t[DHT_AVERAGE_COUNT] = {0};
@@ -43,6 +44,7 @@ volatile uint32_t fan_start_time = 0;
 volatile uint32_t last_element_start = 0;
 volatile uint8_t display_state = 0;
 volatile uint8_t last_second = 0;
+volatile uint32_t int1_press_start = 0;
 
 // Control states
 typedef enum { OFF, ON } ControlState;
@@ -235,7 +237,7 @@ void ElementControl(void) {
 	}
 	if (avr_hum > hum_setpoint - 10 && avr_hum < hum_setpoint)
 	{
-		threshold = ELEMENT_ON_TIME * 2;
+		threshold = ELEMENT_ON_TIME + ELEMENT_ON_TIME / 2;
 	}
 	if (avr_hum >= hum_setpoint)
 	{
@@ -316,8 +318,11 @@ ISR(INT0_vect) {
 
 // INT1 ISR: Reset system with debounce
 ISR(INT1_vect) {
-	RTC_Clock_Write(0, 0, 0, hour_24);
-	RTC_Calendar_Write(1, 1, 1, 19);
+	uint32_t current_time = t->second + t->minute * 60 + t->hour * 3600;
+	if (!int1_flag) {
+		int1_flag = true;
+		int1_press_start = current_time;
+	}
 }
 
 int main(void) {
@@ -360,6 +365,21 @@ int main(void) {
 		    ReadDHT();
 		    read_dht_flag = false;
 	    }
+		if (int1_press_start != 0)
+		{
+			uint32_t current_time = t->second + t->minute * 60 + t->hour * 3600;
+			if (DigitalRead(INT1_PIN) == Low) {
+				if (current_time - int1_press_start >= BUTTON_HOLD_TIME) {
+					RTC_Clock_Write(0, 0, 0, hour_24);
+					RTC_Calendar_Write(1, 1, 1, 19);
+					int1_flag = false;
+					int1_press_start = 0;
+				}
+			} else {
+				int1_flag = false;
+				int1_press_start = 0;
+			}
+		}
 	    sleep_mode();
     }
 }
