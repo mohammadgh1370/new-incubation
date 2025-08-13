@@ -1,7 +1,7 @@
 #include "DS1307.h"
 
 struct tm _tm;
-const int           DaysToMonth[13] =     {  0,31,59,90,120,151,181,212,243,273,304,334,365};
+const int           DaysToMonth[13] =     {0,31,59,90,120,151,181,212,243,273,304,334,365};
 const unsigned int  g_days_in_month[12] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
 const unsigned int  j_days_in_month[12] = {31, 31, 31, 31, 31, 31, 30, 30, 30, 30, 30, 29};
 

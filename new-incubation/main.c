@@ -13,7 +13,7 @@
 #include "DS1307.h"
 #include "DHT.h"
 #include "ADC.h"
-#include "EEPROM.h"
+#include "24c32.h"
 
 // Custom characters for LCD
 const uint8_t fan[8] PROGMEM        = {0x00, 0x0C, 0x05, 0x1F, 0x14, 0x06, 0x00, 0x00};

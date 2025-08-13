@@ -120,13 +120,16 @@
     </ToolchainSettings>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="24c32.c">
+      <SubType>compile</SubType>
+    </Compile>
+    <Compile Include="24c32.h">
+      <SubType>compile</SubType>
+    </Compile>
     <Compile Include="ADC.c">
       <SubType>compile</SubType>
     </Compile>
     <Compile Include="ADC.h">
-      <SubType>compile</SubType>
-    </Compile>
-    <Compile Include="EEPROM.c">
       <SubType>compile</SubType>
     </Compile>
     <Compile Include="CONFIG.h">
@@ -148,9 +151,6 @@
       <SubType>compile</SubType>
     </Compile>
     <Compile Include="I2C_MASTER.h">
-      <SubType>compile</SubType>
-    </Compile>
-    <Compile Include="EEPROM.h">
       <SubType>compile</SubType>
     </Compile>
     <Compile Include="IO_MACROS.h">
