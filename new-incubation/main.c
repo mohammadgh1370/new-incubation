@@ -22,14 +22,16 @@ const uint8_t heater[8] PROGMEM     = {0x00, 0x09, 0x12, 0x12, 0x09, 0x09, 0x12,
 const uint8_t rotate[8] PROGMEM     = {0x1E, 0x12, 0x07, 0x0A, 0x1C, 0x09, 0x0F, 0x00};
 
 // Global variables
-volatile bool first_run_flag = false;
 volatile bool update_display_flag = false;
 volatile bool control_flag = false;
 volatile bool read_dht_flag = false;
 volatile bool read_adc_flag = false;
 volatile bool int1_flag = false;
+volatile bool read_rtc_flag = false;
+
 double temp = 0, hum = 0;
 float out_temp;
+
 double arr_avr_t[DHT_AVERAGE_COUNT] = {0};
 double arr_avr_h[DHT_AVERAGE_COUNT] = {0};
 double arr_avr_out_t[LM35_AVERAGE_COUNT] = {0};
@@ -37,14 +39,11 @@ volatile double avr_temp = 0, avr_hum = 0;
 volatile uint8_t dht_index = 0;
 volatile uint8_t lm35_index = 0;
 volatile struct tm* t = NULL;
-volatile uint8_t timer0_counter = 0;
-volatile uint8_t timer1_counter = 0;
-volatile uint8_t timer2_counter = 0;
+
 volatile uint32_t rotation_start_time = 0;
 volatile uint32_t fan_start_time = 0;
 volatile uint32_t last_element_start = 0;
 volatile uint32_t heater_start_time = 0;
-volatile uint8_t display_state = 0;
 volatile uint8_t last_second = 0;
 volatile uint32_t int1_press_start = 0;
 
@@ -52,21 +51,17 @@ volatile uint32_t int1_press_start = 0;
 typedef enum { OFF, ON } ControlState;
 ControlState heater_state = OFF;
 ControlState prev_heater_state = OFF;
-ControlState element_state = OFF;
-ControlState prev_element_state = OFF;
 ControlState fan_state = OFF;
 ControlState prev_fan_state = OFF;
 ControlState vent_fan_state = OFF;
 ControlState rotate_state = OFF;
 ControlState prev_rotate_state = OFF;
 ControlState humidifier_state = OFF;
+ControlState display_state = OFF;
 
 // Function prototypes
-void WDT_Init(void);
 void LCD_SetupCustomChars(void);
-void Timer0_Init(void);
 void Timer1_Init(void);
-void Timer2_Init(void);
 void INT0_Init(void);
 void INT1_Init(void);
 ControlState HysteresisControl(double current, double setpoint, double hysteresis, ControlState current_state);
@@ -74,12 +69,6 @@ void UpdateDisplay(void);
 void ControlDevices(void);
 void ReadDHT(void);
 void ReadADC(void);
-void ElementControl(void);
-
-// Initialize watchdog timer (call once)
-void WDT_Init(void) {
-	WDTCR = (1 << WDE) | (1 << WDP2) | (1 << WDP1) | (1 << WDP0); // Enable watchdog with ~2.1s timeout
-}
 
 // Setup custom characters for LCD
 void LCD_SetupCustomChars(void) {
@@ -89,25 +78,13 @@ void LCD_SetupCustomChars(void) {
 	LCD_Custom_Char(rotate, 3);
 }
 
-// Initialize Timer0 for periodic display updates (~500ms)
-void Timer0_Init(void) {
-	TCCR0 |= (1 << WGM01) | (1 << CS01) | (1 << CS00); // CTC mode, prescaler 64
-	OCR0 = 249; // ~16ms per interrupt
-	TIMSK |= (1 << OCIE0); // Enable Timer0 compare match interrupt
-}
-
 // Initialize Timer1 for periodic control tasks (~500ms)
 void Timer1_Init(void) {
-	TCCR1B |= (1 << WGM12) | (1 << CS01) | (1 << CS00); // CTC mode, prescaler 64
-	OCR1A = 7811; // ~500ms
+	// Set up Timer1 for CTC mode with a prescaler of 256
+	// This will generate an interrupt every 50ms (at F_CPU = 1MHz)
+	TCCR1B |= (1 << WGM12) | (1 << CS12);
+	OCR1A = 195; // (1000000 / 256) / 195 = ~20Hz (50ms)
 	TIMSK |= (1 << OCIE1A); // Enable Timer1 compare match interrupt
-}
-
-// Initialize Timer2 for periodic DHT sensor readings (~500ms)
-void Timer2_Init(void) {
-	TCCR2 |= (1 << WGM21) | (1 << CS22); // CTC mode, prescaler 64
-	OCR2 = 249; // ~16ms per interrupt
-	TIMSK |= (1 << OCIE2); // Enable Timer2 compare match interrupt
 }
 
 // Initialize INT0 (rotation stop)
@@ -137,15 +114,10 @@ ControlState HysteresisControl(double current, double setpoint, double hysteresi
 // Update LCD display
 void UpdateDisplay(void) {
 	char buffer[30];
-	sprintf(buffer, "%02d:%02d:%02d:%02d", t->day - 1, t->hour, t->minute, t->second);
-	LCD_String_xy(0, 0, buffer);
-
-	if (t->second != last_second && t->second % SWITCH_DISPLAY_SECOND == 0) {
-		display_state = !display_state; // Toggle display between LM35 and DHT
-		last_second = t->second;
-	}
+    sprintf(buffer, "%02d:%02d:%02d:%02d", t->day - 1, t->hour, t->minute, t->second);
+    LCD_String_xy(0, 0, buffer);
 	
-	if (display_state){
+	if (display_state == OFF){
 		enum DHT_Status_t status = DHT_GetStatus();
 		if (status == DHT_Ok) {
 			char temp_str[10], hum_str[10];
@@ -163,7 +135,7 @@ void UpdateDisplay(void) {
 	LCD_Char_xy(0, 11, rotate_state ? 3 : ' ');
 	LCD_Char_xy(0, 12, fan_state ? 0 : ' ');
 	LCD_Char_xy(0, 13, heater_state ? 2 : ' ');
-	LCD_Char_xy(0, 14, element_state ? 1 : ' ');
+	LCD_Char_xy(0, 14, humidifier_state ? 1 : ' ');
 	LCD_String_xy(1, 15, (t->day - 1 < SETTER_PERIOD_DAYS) ? "S" : "H");
 }
 
@@ -190,10 +162,10 @@ void ControlDevices(void) {
 		LCD_Reset();
 		LCD_Init();
 	}
-	
-	ElementControl();
-	
+		
 	humidifier_state = HysteresisControl(avr_hum, hum_setpoint, HUM_HYSTERESIS, humidifier_state);
+	DigitalWrite(HUMIDIFIER_PIN, humidifier_state);
+	
 	ControlState new_fan_state = heater_state || humidifier_state ? ON : OFF;
 	if (prev_fan_state != new_fan_state)
 	{
@@ -224,51 +196,8 @@ void ControlDevices(void) {
 	}
 }
 
-void ElementControl(void) {
-	double hum_setpoint = (t->day - 1 < SETTER_PERIOD_DAYS) ? HUM_SETTER : HUM_HATCHER;
-	uint32_t current_time = t->second + t->minute * 60 + t->hour * 3600;
-	
-	if (t->second == 0 && t->minute % 5 == 0 && current_time >= last_element_start + (ELEMENT_ON_TIME + ELEMENT_OFF_TIME)) {
-		last_element_start = current_time;
-	}
-
-	uint32_t time_in_cycle = current_time - last_element_start;
-	
-	 if (avr_hum < hum_setpoint && time_in_cycle >= (ELEMENT_ON_TIME + ELEMENT_OFF_TIME)) {
-		 last_element_start = current_time - (current_time % (ELEMENT_ON_TIME + ELEMENT_OFF_TIME));
-	 }
- 
-	uint32_t threshold = 0;
-	if (avr_hum < hum_setpoint - 10)
-	{
-		threshold = ELEMENT_ON_TIME * 3;
-	}
-	if (avr_hum > hum_setpoint - 10 && avr_hum < hum_setpoint)
-	{
-		threshold = ELEMENT_ON_TIME + ELEMENT_ON_TIME / 2;
-	}
-	if (avr_hum >= hum_setpoint)
-	{
-		threshold = 0;
-	}
- 
-	if (time_in_cycle < threshold) {
-		if (!element_state) {
-			element_state = ON;
-			DigitalWrite(ELEMENT_PIN, element_state);
-		}
-	}
-	else {
-		if (element_state) {
-			element_state = OFF;
-			DigitalWrite(ELEMENT_PIN, element_state);
-		}
-	}
-}
-
 // Read DHT22 sensor
 void ReadDHT(void) {
-	cli();
 	enum DHT_Status_t status = DHT_Read(&temp, &hum);
 	if (status == DHT_Ok) {
 		arr_avr_t[dht_index] = temp;
@@ -277,43 +206,41 @@ void ReadDHT(void) {
 		avr_temp = average(arr_avr_t, DHT_AVERAGE_COUNT);
 		avr_hum = average(arr_avr_h, DHT_AVERAGE_COUNT);
 	}
-	sei();
 }
 
 // Read LM35 sensor
 void ReadADC(void) {
-	cli();
 	lm35_index = (lm35_index + 1) % LM35_AVERAGE_COUNT;
 	arr_avr_out_t[lm35_index] = ((ADC_Read(1) * 4.88) / 10.00);
 	out_temp = average(arr_avr_out_t, LM35_AVERAGE_COUNT);
-	sei();
 }
 
-// Timer0 ISR: Trigger display update every ~16ms
-ISR(TIMER0_COMP_vect) {
-	if (++timer0_counter >= 31) { // Trigger every 31 interrupts (~500ms)
-		timer0_counter = 0;
-		update_display_flag = true;
-	}
-}
-
-// Timer1 ISR: Trigger device control every ~500ms
 ISR(TIMER1_COMPA_vect) {
-	wdt_reset();
-	control_flag = true;
-	if (++timer1_counter >= 2) { // Trigger every 2 interrupts (~100ms)
-		timer1_counter = 0;
-		read_adc_flag = true;
-	}
-}
-
-// Timer2 ISR: Trigger DHT reading every ~16ms
-ISR(TIMER2_COMP_vect) {
-	if (++timer2_counter >= 124) { // Trigger every 124 interrupts (~2000ms)
-		timer2_counter = 0;
-		read_dht_flag = true;
+	static uint8_t control_counter = 0;
+	static uint8_t display_counter = 0;
+	static uint8_t sensor_counter = 0;
+	
+	control_counter++;
+	display_counter++;
+	sensor_counter++;
+	
+	if (control_counter >= 10) { // Check every 500ms (10 * 50ms)
+		wdt_reset();
+		read_rtc_flag = true;
+		control_flag = true;
+		control_counter = 0;
 	}
 	
+	if (sensor_counter >= 20) { // Check every 1s (20 * 50ms)
+		read_dht_flag = true;
+		read_adc_flag = true;
+		sensor_counter = 0;
+	}
+
+	if (display_counter >= 20) { // Update display every 1s (20 * 50ms)
+		update_display_flag = true;
+		display_counter = 0;
+	}
 }
 
 // INT0 ISR: Stop rotation with debounce
@@ -327,10 +254,10 @@ ISR(INT0_vect) {
 
 // INT1 ISR: Reset system with debounce
 ISR(INT1_vect) {
-	uint32_t current_time = t->second + t->minute * 60 + t->hour * 3600;
+	display_state = !display_state;
 	if (!int1_flag) {
 		int1_flag = true;
-		int1_press_start = current_time;
+		int1_press_start = t->second + t->minute * 60 + t->hour * 3600;;
 	}
 }
 
@@ -339,18 +266,17 @@ int main(void) {
     I2C_Init();
     DHT_Setup();
     LCD_SetupCustomChars();
-    WDT_Init();
 	ADC_Init();
-    Timer0_Init();
     Timer1_Init();
-    Timer2_Init();
     INT0_Init();
     INT1_Init();
+
+	wdt_enable(WDTO_2S); // Enable Watchdog with 2s timeout
 
 	PinMode(FAN_PIN, Output);
     PinMode(ROTATION_PIN, Output);
     PinMode(HEATER_PIN, Output);
-    PinMode(ELEMENT_PIN, Output);
+    PinMode(HUMIDIFIER_PIN, Output);
     PinMode(VENT_FAN_PIN, Output);
 	
 	t = RTC_Read_TimeDate();
@@ -371,8 +297,12 @@ int main(void) {
     set_sleep_mode(SLEEP_MODE_IDLE);
 
     while (1) {
+		if (read_rtc_flag)
+		{
+			t = RTC_Read_TimeDate();
+			read_rtc_flag = false;
+		}
 	    if (update_display_flag) {
-		    t = RTC_Read_TimeDate();
 		    UpdateDisplay();
 		    update_display_flag = false;
 	    }

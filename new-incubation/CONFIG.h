@@ -1,7 +1,7 @@
 #ifndef CONFIG_H_
 #define CONFIG_H_
 
-#include "IO_MACROS.h"
+// #include "IO_MACROS.h"
 
 // Clock frequency
 #ifndef F_CPU
@@ -13,7 +13,7 @@
 
 // Pin definitions
 #define FAN_PIN				D,0  // Fan pin
-#define ELEMENT_PIN	        D,1  // Element pin
+#define HUMIDIFIER_PIN      D,1  // Element pin
 #define INT0_PIN            D,2  // External interrupt 0 pin (rotation stop)
 #define INT1_PIN            D,3  // External interrupt 1 pin (system reset)
 #define ROTATION_PIN        D,4  // Egg rotation motor pin
@@ -37,28 +37,22 @@
 #define HUM_SETTER          60.0   // Humidity setpoint for setter period (%)
 #define HUM_HATCHER         70.0   // Humidity setpoint for hatcher period (%)
 #define TEMP_HYSTERESIS     0.2    // Temperature hysteresis (°C)
-#define HUM_HYSTERESIS      4.0    // Humidity hysteresis (%)
-#define FAN_TRIGGER_TEMP    0.6	   // Temperature offset to trigger ventilation fan (°C)
-#define FAN_TRIGGER_HUM     5	   // Humidity offset to trigger ventilation fan (%)
+#define HUM_HYSTERESIS      2.0    // Humidity hysteresis (%)
+#define FAN_TRIGGER_TEMP    5.0	   // Temperature offset to trigger ventilation fan (°C)
+#define FAN_TRIGGER_HUM     5.0	   // Humidity offset to trigger ventilation fan (%)
 
 // Rotation settings
 #define ROTATION_INTERVAL_HOURS  2   // Rotation interval during setter period (hours)
 
 // DHT22 settings
-#define DHT_Type			DHT22  // DHT11 or DHT22
-#define DHT_AVERAGE_COUNT   5      // Number of samples for averaging
-
-// Display timing (in seconds)
-#define SWITCH_DISPLAY_SECOND   5   // Time to display LM35 temperature
+#define DHT_Type				DHT22  // DHT11 or DHT22
+#define DHT_AVERAGE_COUNT		5      // Number of samples for averaging
 #define LM35_AVERAGE_COUNT		5	// Number of samples for averaging
 
-#define DEVICE_SWITCH_DELAY		50	// Switching delay (ms)
 #define ROTATION_IGNORE_DELAY	9	// Rotation delay change (second)
-#define FAN_DELAY_START			3	// Fan delay start
-#define ELEMENT_ON_TIME			30  // Element on
-#define ELEMENT_OFF_TIME		270 // Element off
+#define FAN_DELAY_START			10	// Fan delay start
 
-#define BUTTON_HOLD_TIME		3	// second
+#define BUTTON_HOLD_TIME		5	// second
 
 #define EEPROM_SEC_ADDR			0x00 // Second address
 #define EEPROM_MIN_ADDR			0x01 // Minute address
